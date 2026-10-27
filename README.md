@@ -11,7 +11,7 @@ Buildroot system on the stock 4.14 vendor kernel, plus a Qt 6 app (Nightstand).
 | `os/scripts/` | Boot image, boot shim and flashing scripts |
 | `os/kernel/` | An earlier attempt with a mainline kernel (not used) |
 | `tools/` | `clocksh.py` (shell over the USB serial console) and `reflash-from-rescue.sh` |
-| `docs/` | `status.md` (current state, recovery steps), hardware research, the app brief |
+| `docs/` | `status.md` (current state, recovery steps), `security.md` (open security notes), hardware research, the app brief |
 
 ## Build
 
