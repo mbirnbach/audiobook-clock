@@ -1,0 +1,13 @@
+# Device dump (3.9 GB, the clock's own calibration data) and build output
+/backup/
+/out/
+app/build/
+
+# Third-party tooling and this clock's identifiers
+/tools/venv/
+/tools/mtkclient/
+/tools/.state
+/tools/hwparam.json
+
+.DS_Store
+__pycache__/

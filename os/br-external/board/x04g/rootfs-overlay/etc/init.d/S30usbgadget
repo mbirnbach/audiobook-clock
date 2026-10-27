@@ -1,0 +1,31 @@
+#!/bin/sh
+# USB Ethernet (CDC-ECM) gadget: clock = 172.16.42.1, host gets 172.16.42.2 via udhcpd
+
+G=/sys/kernel/config/usb_gadget/g1
+
+start() {
+	mountpoint -q /sys/kernel/config || mount -t configfs none /sys/kernel/config
+	mkdir -p $G && cd $G || return 1
+	echo 0x1d6b > idVendor
+	echo 0x0104 > idProduct
+	mkdir -p strings/0x409
+	echo abs-clock > strings/0x409/product
+	cat /proc/device-tree/serial-number 2>/dev/null > strings/0x409/serialnumber || echo x04g > strings/0x409/serialnumber
+	mkdir -p functions/ecm.usb0 configs/c.1/strings/0x409
+	echo ECM > configs/c.1/strings/0x409/configuration
+	ln -sf $G/functions/ecm.usb0 configs/c.1/
+	udc=$(ls /sys/class/udc | head -n1)
+	[ -n "$udc" ] || { echo "no UDC"; return 1; }
+	echo "$udc" > UDC
+	sleep 1
+	ip addr add 172.16.42.1/24 dev usb0
+	ip link set usb0 up
+	printf 'start 172.16.42.2\nend 172.16.42.2\ninterface usb0\noption subnet 255.255.255.0\nmax_leases 1\nlease_file /tmp/udhcpd.leases\n' > /tmp/udhcpd.conf
+	touch /tmp/udhcpd.leases
+	udhcpd /tmp/udhcpd.conf
+}
+
+case "$1" in
+	start) start ;;
+	stop) echo "" > $G/UDC 2>/dev/null ;;
+esac

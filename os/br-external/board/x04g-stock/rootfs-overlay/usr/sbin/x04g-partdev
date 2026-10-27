@@ -1,0 +1,9 @@
+#!/bin/sh
+# x04g-partdev <name>: print the block device of the eMMC partition with that GPT name
+for u in /sys/class/block/*/uevent; do
+	if grep -q "^PARTNAME=$1\$" "$u"; then
+		echo /dev/$(sed -n 's/^DEVNAME=//p' "$u")
+		exit 0
+	fi
+done
+exit 1

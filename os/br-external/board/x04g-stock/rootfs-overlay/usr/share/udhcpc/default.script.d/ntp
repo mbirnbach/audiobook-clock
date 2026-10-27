@@ -1,0 +1,6 @@
+#!/bin/sh
+# A fresh lease means DNS works now: busybox ntpd started before the network
+# never resolves its peers, so restart it (it then steps the clock and
+# x04g-ntp-synced writes the RTC)
+[ "$1" = bound ] && /etc/init.d/S45ntp restart
+exit 0

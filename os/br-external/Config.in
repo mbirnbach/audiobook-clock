@@ -1,0 +1,3 @@
+source "$BR2_EXTERNAL_ABS_CLOCK_PATH/package/wmt-init/Config.in"
+source "$BR2_EXTERNAL_ABS_CLOCK_PATH/package/nightstand/Config.in"
+source "$BR2_EXTERNAL_ABS_CLOCK_PATH/package/x04g-utils/Config.in"

@@ -1,0 +1,49 @@
+#!/bin/sh
+# Setup hotspot for phone-based Wi-Fi setup, called by the app:
+#   nightstand-ap start <ssid>   open AP on 192.168.4.1 with DHCP; exit 0 when up
+#   nightstand-ap stop           tear it down and hand the interface back to wpa_supplicant
+#
+# UNTESTED on the X04G: needs AP mode from the MT8167 CONNSYS Wi-Fi driver, hostapd and
+# dnsmasq in the image. MediaTek CONNSYS drivers often expose AP mode on a separate
+# interface (e.g. after `echo AP > /dev/wmtWifi` it shows up as ap0); set NIGHTSTAND_AP_IF.
+set -e
+
+IF=${NIGHTSTAND_AP_IF:-wlan0}
+RUN=/run/nightstand-ap
+ADDR=192.168.4.1
+
+case "$1" in
+start)
+    [ -n "$2" ] || { echo "usage: $0 start <ssid>" >&2; exit 2; }
+    mkdir -p "$RUN"
+    cat > "$RUN/hostapd.conf" <<EOF
+interface=$IF
+driver=nl80211
+ssid=$2
+hw_mode=g
+channel=6
+auth_algs=1
+ignore_broadcast_ssid=0
+EOF
+    # Station mode and AP mode can't share the interface on most drivers.
+    wpa_cli -i "$IF" disconnect >/dev/null 2>&1 || true
+    ip addr flush dev "$IF"
+    ip addr add "$ADDR/24" dev "$IF"
+    ip link set "$IF" up
+    hostapd -B -P "$RUN/hostapd.pid" "$RUN/hostapd.conf"
+    # DHCP, and answer every DNS name with the clock so phones open the setup page.
+    dnsmasq --interface="$IF" --bind-interfaces --pid-file="$RUN/dnsmasq.pid" \
+        --dhcp-range=192.168.4.10,192.168.4.50,12h --address=/#/$ADDR --no-resolv
+    ;;
+stop)
+    [ -f "$RUN/dnsmasq.pid" ] && kill "$(cat "$RUN/dnsmasq.pid")" 2>/dev/null || true
+    [ -f "$RUN/hostapd.pid" ] && kill "$(cat "$RUN/hostapd.pid")" 2>/dev/null || true
+    rm -rf "$RUN"
+    ip addr flush dev "$IF" || true
+    wpa_cli -i "$IF" reconnect >/dev/null 2>&1 || true
+    ;;
+*)
+    echo "usage: $0 start <ssid> | stop" >&2
+    exit 2
+    ;;
+esac

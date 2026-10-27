@@ -1,0 +1,4 @@
+#!/bin/sh
+case "$1" in
+	start) x04g-audio-init ;;
+esac

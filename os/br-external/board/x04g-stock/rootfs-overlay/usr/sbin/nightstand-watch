@@ -1,0 +1,35 @@
+#!/bin/sh
+# App watchdog. nightstand bumps a counter in /run/nightstand/alive every 5 s from its
+# event loop; crashes are already restarted by init, this catches a hung app.
+# Stuck for a minute: kill it (init starts it again). Still stuck a minute later: reboot.
+# Kernel hangs are covered by MediaTek's own watchdog kicker (wdk) and panic=5.
+F=/run/nightstand/alive
+last=
+stuck=0
+killed=0
+while sleep 10; do
+	cur=$(cat $F 2>/dev/null)
+	# not started yet, or stopped on purpose
+	if [ -z "$cur" ] || ! pidof nightstand > /dev/null; then
+		stuck=0
+		continue
+	fi
+	if [ "$cur" != "$last" ]; then
+		last=$cur
+		stuck=0
+		killed=0
+		continue
+	fi
+	stuck=$((stuck + 1))
+	[ $stuck -lt 6 ] && continue
+	stuck=0
+	if [ $killed = 0 ]; then
+		logger -t nightstand-watch "app stuck for a minute, restarting it"
+		killall -9 nightstand
+		killed=1
+	else
+		logger -t nightstand-watch "app still stuck after a restart, rebooting"
+		sync
+		reboot
+	fi
+done

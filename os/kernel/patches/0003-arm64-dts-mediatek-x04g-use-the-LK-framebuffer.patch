@@ -1,0 +1,52 @@
+From 7eb9aa58ccede90d06a3c04d8e65edbbdba60675 Mon Sep 17 00:00:00 2001
+From: abs-clock <abs-clock@localhost>
+Date: Mon, 26 Oct 2026 19:47:46 +0000
+Subject: [PATCH] arm64: dts: mediatek: x04g: use the LK framebuffer at
+ 0x7f2c0000
+
+On this unit LK (mico_x04g-451d69f-20210619014509-20211214131701) scans
+out from 0x7f2c0000 and the stock kernel reserves 0x7f2c0000-0x7f9c0000
+for it. The simple-framebuffer at 0x7f1c0000 showed nothing and fbcon
+wrote into 1 MiB of RAM the kernel also allocates from. Point it at the
+right address and reserve the region.
+---
+ .../boot/dts/mediatek/mt8167-xiaomi-x04g.dts      | 15 +++++++++++++--
+ 1 file changed, 13 insertions(+), 2 deletions(-)
+
+diff --git a/arch/arm64/boot/dts/mediatek/mt8167-xiaomi-x04g.dts b/arch/arm64/boot/dts/mediatek/mt8167-xiaomi-x04g.dts
+index e7019059a..4fe0ce5cd 100644
+--- a/arch/arm64/boot/dts/mediatek/mt8167-xiaomi-x04g.dts
++++ b/arch/arm64/boot/dts/mediatek/mt8167-xiaomi-x04g.dts
+@@ -25,9 +25,15 @@ chosen {
+ 
+ 		stdout-path = &framebuffer0;
+ 
+-		framebuffer0: framebuffer@7f1c0000 {
++		/*
++		 * LK (mico_x04g-451d69f-20210619014509-20211214131701) scans out
++		 * from the start of its framebuffer mblock at 0x7f2c0000; the
++		 * stock kernel reserves 0x7f2c0000-0x7f9c0000 for it.
++		 */
++		framebuffer0: framebuffer@7f2c0000 {
+ 			compatible = "simple-framebuffer";
+-			reg = <0x0 0x7f1c0000 0x0 (800 * 480 * 4)>;
++			memory-region = <&lk_framebuffer>;
++			reg = <0x0 0x7f2c0000 0x0 (800 * 480 * 4)>;
+ 			width = <480>;
+ 			height = <800>;
+ 			stride = <(480 * 4)>;
+@@ -61,6 +67,11 @@ atf-reserved-memory {
+ 		 * console log left by this kernel can be read back from the
+ 		 * stock (LineageOS) kernel after a watchdog reset.
+ 		 */
++		lk_framebuffer: framebuffer@7f2c0000 {
++			reg = <0x00 0x7f2c0000 0x00 0x700000>;
++			no-map;
++		};
++
+ 		ramoops@54410000 {
+ 			compatible = "ramoops";
+ 			reg = <0x00 0x54410000 0x00 0xe0000>;
+-- 
+2.43.0
+

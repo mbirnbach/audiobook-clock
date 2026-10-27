@@ -1,0 +1,28 @@
+#!/bin/sh
+# Persistent data on the userdata partition (ext4), mounted at /data.
+# The root filesystem is read-only with a RAM overlay, so anything that has to
+# survive a reboot (Wi-Fi config, SSH host keys, app settings and cache) goes here.
+
+start() {
+	dev=$(x04g-partdev userdata) || { echo "S01data: no userdata partition"; return 1; }
+	mkdir -p /data
+	if ! mount -t ext4 -o noatime,nodev,nosuid "$dev" /data; then
+		# Only format when there is no ext4 at all (first boot after flashing);
+		# never on a mount error of an existing filesystem.
+		if ! dumpe2fs -h "$dev" >/dev/null 2>&1; then
+			echo "S01data: formatting $dev"
+			# orphan_file needs Linux 5.15, the stock kernel is 4.14
+			mkfs.ext4 -q -F -L abs-data -O ^metadata_csum_seed,^orphan_file "$dev" &&
+				mount -t ext4 -o noatime,nodev,nosuid "$dev" /data
+		fi
+	fi
+	mountpoint -q /data || { echo "S01data: /data not mounted, using RAM"; mount -t tmpfs tmpfs /data; }
+	mkdir -p /data/wifi /data/dropbear /data/nightstand /data/log
+	# dropbear keeps its host keys in /etc/dropbear
+	rm -rf /etc/dropbear && ln -s /data/dropbear /etc/dropbear
+}
+
+case "$1" in
+	start) start ;;
+	stop) sync; umount /data 2>/dev/null ;;
+esac

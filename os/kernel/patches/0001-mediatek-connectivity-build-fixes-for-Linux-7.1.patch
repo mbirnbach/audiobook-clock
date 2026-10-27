@@ -1,0 +1,380 @@
+From c9845f4085086e083fe1ed5d976a89c2401329de Mon Sep 17 00:00:00 2001
+From: abs-clock <abs-clock@localhost>
+Date: Mon, 26 Oct 2026 18:48:20 +0000
+Subject: [PATCH] mediatek: connectivity: build fixes for Linux 7.1
+
+- wmt_gpio.h: linux/of_gpio.h was removed; stub of_get_named_gpio(), only
+  used for external combo chips which the MT8167 CONNSYS does not have
+- wlan gen2: cfg80211 key/station ops take struct wireless_dev now;
+  cfg80211_new_sta()/cfg80211_del_sta() take the wireless_dev
+- wlan gen2: gl_proc.c: clamp user copies to buffer size - 1 (off-by-one
+  wrote the terminator past the end, count + 1 could overflow)
+---
+ .../common/common_detect/wmt_gpio.h           | 13 +++++++-
+ .../wlan/gen2/os/linux/gl_cfg80211.c          | 32 ++++++++++++++-----
+ .../wlan/gen2/os/linux/gl_p2p_cfg80211.c      | 20 +++++++++---
+ .../wlan/gen2/os/linux/gl_p2p_kal.c           |  4 +--
+ .../connectivity/wlan/gen2/os/linux/gl_proc.c | 15 +++------
+ .../wlan/gen2/os/linux/include/gl_cfg80211.h  | 16 +++++-----
+ .../wlan/gen2/os/linux/include/gl_p2p_ioctl.h | 10 +++---
+ 7 files changed, 71 insertions(+), 39 deletions(-)
+
+diff --git a/drivers/misc/mediatek/connectivity/common/common_detect/wmt_gpio.h b/drivers/misc/mediatek/connectivity/common/common_detect/wmt_gpio.h
+index 39ed6f65f..425b4a98d 100644
+--- a/drivers/misc/mediatek/connectivity/common/common_detect/wmt_gpio.h
++++ b/drivers/misc/mediatek/connectivity/common/common_detect/wmt_gpio.h
+@@ -16,7 +16,18 @@
+ #define _WMT_GPIO_H_
+ 
+ #include <linux/of.h>
+-#include <linux/of_gpio.h>
++#include <linux/of.h>
++
++/*
++ * linux/of_gpio.h is gone from mainline. Only external combo chips
++ * ("mediatek,connectivity-combo" node) use these GPIOs; the MT8167 CONNSYS
++ * has none, so report "no GPIO" exactly like a missing DT property would.
++ */
++static inline int of_get_named_gpio(const struct device_node *np,
++				    const char *propname, int index)
++{
++	return -ENOENT;
++}
+ #include <linux/pinctrl/consumer.h>
+ #include <linux/pinctrl/pinctrl.h>
+ #include <linux/gpio.h>
+diff --git a/drivers/misc/mediatek/connectivity/wlan/gen2/os/linux/gl_cfg80211.c b/drivers/misc/mediatek/connectivity/wlan/gen2/os/linux/gl_cfg80211.c
+index 93d6fa89c..dba55f207 100644
+--- a/drivers/misc/mediatek/connectivity/wlan/gen2/os/linux/gl_cfg80211.c
++++ b/drivers/misc/mediatek/connectivity/wlan/gen2/os/linux/gl_cfg80211.c
+@@ -137,9 +137,11 @@ mtk_cfg80211_change_iface(struct wiphy *wiphy,
+ /*----------------------------------------------------------------------------*/
+ int
+ mtk_cfg80211_add_key(struct wiphy *wiphy,
+-		     struct net_device *ndev, int link_id,
++		     struct wireless_dev *wdev, int link_id,
+ 		     u8 key_index, bool pairwise, const u8 *mac_addr, struct key_params *params)
+ {
++	struct net_device *ndev = wdev->netdev;
++
+ 	PARAM_KEY_T rKey;
+ 	P_GLUE_INFO_T prGlueInfo = NULL;
+ 	WLAN_STATUS rStatus = WLAN_STATUS_SUCCESS;
+@@ -218,11 +220,13 @@ mtk_cfg80211_add_key(struct wiphy *wiphy,
+ /*----------------------------------------------------------------------------*/
+ int
+ mtk_cfg80211_get_key(struct wiphy *wiphy,
+-		     struct net_device *ndev, int link_id,
++		     struct wireless_dev *wdev, int link_id,
+ 		     u8 key_index,
+ 		     bool pairwise,
+ 		     const u8 *mac_addr, void *cookie, void (*callback) (void *cookie, struct key_params *))
+ {
++	struct net_device *ndev = wdev->netdev;
++
+ 	P_GLUE_INFO_T prGlueInfo = NULL;
+ 
+ 	prGlueInfo = (P_GLUE_INFO_T) wiphy_priv(wiphy);
+@@ -245,8 +249,10 @@ mtk_cfg80211_get_key(struct wiphy *wiphy,
+  *         others:  failure
+  */
+ /*----------------------------------------------------------------------------*/
+-int mtk_cfg80211_del_key(struct wiphy *wiphy, struct net_device *ndev, int link_id, u8 key_index, bool pairwise, const u8 *mac_addr)
++int mtk_cfg80211_del_key(struct wiphy *wiphy, struct wireless_dev *wdev, int link_id, u8 key_index, bool pairwise, const u8 *mac_addr)
+ {
++	struct net_device *ndev = wdev->netdev;
++
+ 	P_GLUE_INFO_T prGlueInfo = NULL;
+ 	WLAN_STATUS rStatus = WLAN_STATUS_SUCCESS;
+ 	PARAM_REMOVE_KEY_T rRemoveKey;
+@@ -322,8 +328,10 @@ mtk_cfg80211_set_default_key(struct wiphy *wiphy, struct net_device *ndev, int l
+  *         others:  failure
+  */
+ /*----------------------------------------------------------------------------*/
+-int mtk_cfg80211_set_default_mgmt_key(struct wiphy *wiphy, struct net_device *netdev, int link_id, u8 key_index)
++int mtk_cfg80211_set_default_mgmt_key(struct wiphy *wiphy, struct wireless_dev *wdev, int link_id, u8 key_index)
+ {
++	struct net_device *netdev = wdev->netdev;
++
+ 	return 0;
+ }
+ 
+@@ -337,8 +345,10 @@ int mtk_cfg80211_set_default_mgmt_key(struct wiphy *wiphy, struct net_device *ne
+  *         others:  failure
+  */
+ /*----------------------------------------------------------------------------*/
+-int mtk_cfg80211_get_station(struct wiphy *wiphy, struct net_device *ndev, const u8 *mac, struct station_info *sinfo)
++int mtk_cfg80211_get_station(struct wiphy *wiphy, struct wireless_dev *wdev, const u8 *mac, struct station_info *sinfo)
+ {
++	struct net_device *ndev = wdev->netdev;
++
+ #define LINKSPEED_MAX_RANGE_11BGN 3000
+ 	P_GLUE_INFO_T prGlueInfo = NULL;
+ 	WLAN_STATUS rStatus;
+@@ -485,9 +495,11 @@ int mtk_cfg80211_get_station(struct wiphy *wiphy, struct net_device *ndev, const
+  *         others:  failure
+  */
+ /*----------------------------------------------------------------------------*/
+-int mtk_cfg80211_change_station(struct wiphy *wiphy, struct net_device *ndev,
++int mtk_cfg80211_change_station(struct wiphy *wiphy, struct wireless_dev *wdev,
+ 				const u8 *mac, struct station_parameters *params)
+ {
++	struct net_device *ndev = wdev->netdev;
++
+ #if (CFG_SUPPORT_TDLS == 1)
+ 	/*
+ 	 * EX: In supplicant,
+@@ -601,9 +613,11 @@ int mtk_cfg80211_change_station(struct wiphy *wiphy, struct net_device *ndev,
+  *         others:  failure
+  */
+ /*----------------------------------------------------------------------------*/
+-int mtk_cfg80211_add_station(struct wiphy *wiphy, struct net_device *ndev,
++int mtk_cfg80211_add_station(struct wiphy *wiphy, struct wireless_dev *wdev,
+ 				const u8 *mac, struct station_parameters *params)
+ {
++	struct net_device *ndev = wdev->netdev;
++
+ #if (CFG_SUPPORT_TDLS == 1)
+ 	/* from supplicant -- wpa_supplicant_tdls_peer_addset() */
+ 	P_GLUE_INFO_T prGlueInfo;
+@@ -702,8 +716,10 @@ int mtk_cfg80211_add_station(struct wiphy *wiphy, struct net_device *ndev,
+  *		must implement if you have add_station().
+  */
+ /*----------------------------------------------------------------------------*/
+-int mtk_cfg80211_del_station(struct wiphy *wiphy, struct net_device *ndev, struct station_del_parameters *params)
++int mtk_cfg80211_del_station(struct wiphy *wiphy, struct wireless_dev *wdev, struct station_del_parameters *params)
+ {
++	struct net_device *ndev = wdev->netdev;
++
+ 	return 0;
+ }
+ 
+diff --git a/drivers/misc/mediatek/connectivity/wlan/gen2/os/linux/gl_p2p_cfg80211.c b/drivers/misc/mediatek/connectivity/wlan/gen2/os/linux/gl_p2p_cfg80211.c
+index 0d9997353..b664f5888 100644
+--- a/drivers/misc/mediatek/connectivity/wlan/gen2/os/linux/gl_p2p_cfg80211.c
++++ b/drivers/misc/mediatek/connectivity/wlan/gen2/os/linux/gl_p2p_cfg80211.c
+@@ -79,9 +79,11 @@ mtk_p2p_cfg80211func_channel_format_switch(IN struct ieee80211_channel *channel,
+ */
+ 
+ int mtk_p2p_cfg80211_add_key(struct wiphy *wiphy,
+-			     struct net_device *ndev, int link_id,
++			     struct wireless_dev *wdev, int link_id,
+ 			     u8 key_index, bool pairwise, const u8 *mac_addr, struct key_params *params)
+ {
++	struct net_device *ndev = wdev->netdev;
++
+ 	P_GLUE_INFO_T prGlueInfo = NULL;
+ 	INT_32 i4Rslt = -EINVAL;
+ 	WLAN_STATUS rStatus = WLAN_STATUS_SUCCESS;
+@@ -140,12 +142,14 @@ int mtk_p2p_cfg80211_add_key(struct wiphy *wiphy,
+ }
+ 
+ int mtk_p2p_cfg80211_get_key(struct wiphy *wiphy,
+-			     struct net_device *ndev, int link_id,
++			     struct wireless_dev *wdev, int link_id,
+ 			     u8 key_index,
+ 			     bool pairwise,
+ 			     const u8 *mac_addr, void *cookie, void (*callback) (void *cookie, struct key_params *)
+ )
+ {
++	struct net_device *ndev = wdev->netdev;
++
+ 	P_GLUE_INFO_T prGlueInfo = NULL;
+ 
+ 	ASSERT(wiphy);
+@@ -158,8 +162,10 @@ int mtk_p2p_cfg80211_get_key(struct wiphy *wiphy,
+ }
+ 
+ int mtk_p2p_cfg80211_del_key(struct wiphy *wiphy,
+-			     struct net_device *ndev, int link_id, u8 key_index, bool pairwise, const u8 *mac_addr)
++			     struct wireless_dev *wdev, int link_id, u8 key_index, bool pairwise, const u8 *mac_addr)
+ {
++	struct net_device *ndev = wdev->netdev;
++
+ 	P_GLUE_INFO_T prGlueInfo = NULL;
+ 	PARAM_REMOVE_KEY_T prRemoveKey;
+ 	INT_32 i4Rslt = -EINVAL;
+@@ -208,9 +214,11 @@ mtk_p2p_cfg80211_set_default_key(struct wiphy *wiphy,
+ 	return WLAN_STATUS_SUCCESS;
+ }
+ 
+-int mtk_p2p_cfg80211_get_station(struct wiphy *wiphy, struct net_device *ndev,
++int mtk_p2p_cfg80211_get_station(struct wiphy *wiphy, struct wireless_dev *wdev,
+ 					const u8 *mac, struct station_info *sinfo)
+ {
++	struct net_device *ndev = wdev->netdev;
++
+ 	INT_32 i4RetRslt = -EINVAL;
+ 	P_GLUE_INFO_T prGlueInfo = (P_GLUE_INFO_T) NULL;
+ 	P_GL_P2P_INFO_T prP2pGlueInfo = (P_GL_P2P_INFO_T) NULL;
+@@ -1117,8 +1125,10 @@ int mtk_p2p_cfg80211_change_bss(struct wiphy *wiphy, struct net_device *dev, str
+ 	return i4Rslt;
+ }				/* mtk_p2p_cfg80211_change_bss */
+ 
+-int mtk_p2p_cfg80211_del_station(struct wiphy *wiphy, struct net_device *dev, struct station_del_parameters *params)
++int mtk_p2p_cfg80211_del_station(struct wiphy *wiphy, struct wireless_dev *wdev, struct station_del_parameters *params)
+ {
++	struct net_device *dev = wdev->netdev;
++
+ 	P_GLUE_INFO_T prGlueInfo = (P_GLUE_INFO_T) NULL;
+ 	INT_32 i4Rslt = -EINVAL;
+ 	P_MSG_P2P_CONNECTION_ABORT_T prDisconnectMsg = (P_MSG_P2P_CONNECTION_ABORT_T) NULL;
+diff --git a/drivers/misc/mediatek/connectivity/wlan/gen2/os/linux/gl_p2p_kal.c b/drivers/misc/mediatek/connectivity/wlan/gen2/os/linux/gl_p2p_kal.c
+index a9bbcd87b..2156aee4d 100644
+--- a/drivers/misc/mediatek/connectivity/wlan/gen2/os/linux/gl_p2p_kal.c
++++ b/drivers/misc/mediatek/connectivity/wlan/gen2/os/linux/gl_p2p_kal.c
+@@ -1093,12 +1093,12 @@ VOID kalP2PGOStationUpdate(IN P_GLUE_INFO_T prGlueInfo, IN P_STA_RECORD_T prCliS
+ 			rStationInfo.assoc_req_ies = prCliStaRec->pucAssocReqIe;
+ 			rStationInfo.assoc_req_ies_len = prCliStaRec->u2AssocReqIeLen;
+ 
+-			cfg80211_new_sta(prGlueInfo->prP2PInfo->prDevHandler,	/* struct net_device * dev, */
++			cfg80211_new_sta(prGlueInfo->prP2PInfo->prDevHandler->ieee80211_ptr,	/* struct net_device * dev, */
+ 					 prCliStaRec->aucMacAddr, &rStationInfo, GFP_KERNEL);
+ 		} else {
+ 			++prP2pGlueInfo->i4Generation;
+ 
+-			cfg80211_del_sta(prGlueInfo->prP2PInfo->prDevHandler,	/* struct net_device * dev, */
++			cfg80211_del_sta(prGlueInfo->prP2PInfo->prDevHandler->ieee80211_ptr,	/* struct net_device * dev, */
+ 					 prCliStaRec->aucMacAddr, GFP_KERNEL);
+ 		}
+ 
+diff --git a/drivers/misc/mediatek/connectivity/wlan/gen2/os/linux/gl_proc.c b/drivers/misc/mediatek/connectivity/wlan/gen2/os/linux/gl_proc.c
+index a392077c0..f41af725e 100644
+--- a/drivers/misc/mediatek/connectivity/wlan/gen2/os/linux/gl_proc.c
++++ b/drivers/misc/mediatek/connectivity/wlan/gen2/os/linux/gl_proc.c
+@@ -468,8 +468,7 @@ static ssize_t procDbgLevelWrite(struct file *file, const char *buffer, size_t c
+ 	UINT_8 *temp = &aucProcBuf[0];
+ 
+ 	kalMemSet(aucProcBuf, 0, u4CopySize);
+-	if (u4CopySize >= count + 1)
+-		u4CopySize = count;
++	u4CopySize = min_t(size_t, count, u4CopySize - 1);
+ 
+ 	if (copy_from_user(aucProcBuf, buffer, u4CopySize)) {
+ 		kalPrint("error of copy from user\n");
+@@ -548,8 +547,7 @@ static ssize_t procTxDoneCfgWrite(struct file *file, const char *buffer, size_t
+ 	UINT_8 aucModuleArray[][MODULE_NAME_LENGTH] = {"ARP", "DNS", "TCP", "UDP", "EAPOL", "DHCP", "ICMP"};
+ 
+ 	kalMemSet(aucProcBuf, 0, u4CopySize);
+-	if (u4CopySize >= count + 1)
+-		u4CopySize = count;
++	u4CopySize = min_t(size_t, count, u4CopySize - 1);
+ 
+ 	if (copy_from_user(aucProcBuf, buffer, u4CopySize)) {
+ 		kalPrint("error of copy from user\n");
+@@ -872,11 +870,9 @@ static ssize_t procCountryWrite(struct file *file, const char __user *buffer,
+ {
+ 	UINT_32 u4BufLen = 0;
+ 	WLAN_STATUS rStatus;
+-	UINT_32 u4CopySize = sizeof(aucProcBuf);
++	UINT_32 u4CopySize = min_t(size_t, count, sizeof(aucProcBuf) - 1);
+ 
+-	kalMemSet(aucProcBuf, 0, u4CopySize);
+-	if (u4CopySize >= count+1)
+-		u4CopySize = count;
++	kalMemSet(aucProcBuf, 0, sizeof(aucProcBuf));
+ 
+ 	if (copy_from_user(aucProcBuf, buffer, u4CopySize)) {
+ 		pr_err("error of copy from user\n");
+@@ -1069,8 +1065,7 @@ static ssize_t cfgWrite(struct file *filp, const char __user *buf, size_t count,
+ 
+ 	kalMemSet(aucCfgBuf, '\0', u4CopySize);
+ 
+-	if (u4CopySize >= (count + 1))
+-		u4CopySize = count;
++	u4CopySize = min_t(size_t, count, u4CopySize - 1);
+ 
+ 	if (copy_from_user(aucCfgBuf, buf, u4CopySize)) {
+ 		DBGLOG(INIT, ERROR, "copy from user failed\n");
+diff --git a/drivers/misc/mediatek/connectivity/wlan/gen2/os/linux/include/gl_cfg80211.h b/drivers/misc/mediatek/connectivity/wlan/gen2/os/linux/include/gl_cfg80211.h
+index f7089b891..9056ef869 100644
+--- a/drivers/misc/mediatek/connectivity/wlan/gen2/os/linux/include/gl_cfg80211.h
++++ b/drivers/misc/mediatek/connectivity/wlan/gen2/os/linux/include/gl_cfg80211.h
+@@ -192,34 +192,34 @@ mtk_cfg80211_change_iface(struct wiphy *wiphy,
+ 
+ int
+ mtk_cfg80211_add_key(struct wiphy *wiphy,
+-		     struct net_device *ndev, int link_id,
++		     struct wireless_dev *wdev, int link_id,
+ 		     u8 key_index, bool pairwise, const u8 *mac_addr, struct key_params *params);
+ 
+ int
+ mtk_cfg80211_get_key(struct wiphy *wiphy,
+-		     struct net_device *ndev, int link_id,
++		     struct wireless_dev *wdev, int link_id,
+ 		     u8 key_index,
+ 		     bool pairwise,
+ 		     const u8 *mac_addr, void *cookie, void (*callback) (void *cookie, struct key_params *)
+ );
+ 
+ int
+-mtk_cfg80211_del_key(struct wiphy *wiphy, struct net_device *ndev, int link_id, u8 key_index, bool pairwise, const u8 *mac_addr);
++mtk_cfg80211_del_key(struct wiphy *wiphy, struct wireless_dev *wdev, int link_id, u8 key_index, bool pairwise, const u8 *mac_addr);
+ 
+ int
+ mtk_cfg80211_set_default_key(struct wiphy *wiphy, struct net_device *ndev, int link_id, u8 key_index, bool unicast, bool multicast);
+ 
+-int mtk_cfg80211_set_default_mgmt_key(struct wiphy *wiphy, struct net_device *netdev, int link_id, u8 key_index);
++int mtk_cfg80211_set_default_mgmt_key(struct wiphy *wiphy, struct wireless_dev *wdev, int link_id, u8 key_index);
+ 
+-int mtk_cfg80211_get_station(struct wiphy *wiphy, struct net_device *ndev, const u8 *mac, struct station_info *sinfo);
++int mtk_cfg80211_get_station(struct wiphy *wiphy, struct wireless_dev *wdev, const u8 *mac, struct station_info *sinfo);
+ 
+-int mtk_cfg80211_add_station(struct wiphy *wiphy, struct net_device *ndev,
++int mtk_cfg80211_add_station(struct wiphy *wiphy, struct wireless_dev *wdev,
+ 				const u8 *mac, struct station_parameters *params);
+ 
+-int mtk_cfg80211_change_station(struct wiphy *wiphy, struct net_device *ndev,
++int mtk_cfg80211_change_station(struct wiphy *wiphy, struct wireless_dev *wdev,
+ 				const u8 *mac, struct station_parameters *params);
+ 
+-int mtk_cfg80211_del_station(struct wiphy *wiphy, struct net_device *ndev, struct station_del_parameters *params);
++int mtk_cfg80211_del_station(struct wiphy *wiphy, struct wireless_dev *wdev, struct station_del_parameters *params);
+ 
+ int mtk_cfg80211_scan(struct wiphy *wiphy, struct cfg80211_scan_request *request);
+ 
+diff --git a/drivers/misc/mediatek/connectivity/wlan/gen2/os/linux/include/gl_p2p_ioctl.h b/drivers/misc/mediatek/connectivity/wlan/gen2/os/linux/include/gl_p2p_ioctl.h
+index 4c020c998..96d296f6f 100644
+--- a/drivers/misc/mediatek/connectivity/wlan/gen2/os/linux/include/gl_p2p_ioctl.h
++++ b/drivers/misc/mediatek/connectivity/wlan/gen2/os/linux/include/gl_p2p_ioctl.h
+@@ -302,24 +302,24 @@ int mtk_p2p_cfg80211_change_iface(struct wiphy *wiphy,
+ 				  enum nl80211_iftype type, struct vif_params *params);
+ 
+ int mtk_p2p_cfg80211_add_key(struct wiphy *wiphy,
+-			     struct net_device *ndev,  int link_id,
++			     struct wireless_dev *wdev,  int link_id,
+ 			     u8 key_index, bool pairwise, const u8 *mac_addr, struct key_params *params);
+ 
+ int mtk_p2p_cfg80211_get_key(struct wiphy *wiphy,
+-			     struct net_device *ndev, int link_id,
++			     struct wireless_dev *wdev, int link_id,
+ 			     u8 key_index,
+ 			     bool pairwise,
+ 			     const u8 *mac_addr, void *cookie, void (*callback) (void *cookie, struct key_params *)
+ );
+ 
+ int mtk_p2p_cfg80211_del_key(struct wiphy *wiphy,
+-			     struct net_device *ndev, int link_id, u8 key_index, bool pairwise, const u8 *mac_addr);
++			     struct wireless_dev *wdev, int link_id, u8 key_index, bool pairwise, const u8 *mac_addr);
+ 
+ int
+ mtk_p2p_cfg80211_set_default_key(struct wiphy *wiphy,
+ 				 struct net_device *netdev, int link_id, u8 key_index, bool unicast, bool multicast);
+ 
+-int mtk_p2p_cfg80211_get_station(struct wiphy *wiphy, struct net_device *ndev,
++int mtk_p2p_cfg80211_get_station(struct wiphy *wiphy, struct wireless_dev *wdev,
+ 					const u8 *mac, struct station_info *sinfo);
+ 
+ int mtk_p2p_cfg80211_set_wiphy_params(struct wiphy *wiphy, int link_id, u32 changed);
+@@ -364,7 +364,7 @@ int mtk_p2p_cfg80211_mgmt_tx(struct wiphy *wiphy,
+ 
+ int mtk_p2p_cfg80211_stop_ap(struct wiphy *wiphy, struct net_device *dev, unsigned int link_id);
+ 
+-int mtk_p2p_cfg80211_del_station(struct wiphy *wiphy, struct net_device *dev, struct station_del_parameters *params);
++int mtk_p2p_cfg80211_del_station(struct wiphy *wiphy, struct wireless_dev *wdev, struct station_del_parameters *params);
+ 
+ int mtk_p2p_cfg80211_set_channel(struct wiphy *wiphy, struct net_device *dev, struct cfg80211_chan_def *chandef);
+ 
+-- 
+2.43.0
+

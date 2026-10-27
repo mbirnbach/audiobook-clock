@@ -1,0 +1,30 @@
+#!/bin/sh
+# USB gadget: CDC-ACM serial console (ttyGS0). macOS shows it as /dev/cu.usbmodem*.
+
+G=/sys/kernel/config/usb_gadget/g1
+
+start() {
+	[ -d $G ] && return 0
+	mkdir -p $G && cd $G || return 1
+	echo 0x1d6b > idVendor
+	echo 0x0104 > idProduct
+	mkdir -p strings/0x409
+	echo abs-clock > strings/0x409/product
+	echo abs-clock > strings/0x409/manufacturer
+	cat /proc/sys/kernel/random/boot_id 2>/dev/null | cut -c1-8 > strings/0x409/serialnumber
+	mkdir -p functions/acm.GS0 configs/c.1/strings/0x409
+	echo serial > configs/c.1/strings/0x409/configuration
+	ln -sf $G/functions/acm.GS0 configs/c.1/
+	for i in 1 2 3 4 5 6 7 8 9 10; do
+		udc=$(ls /sys/class/udc 2>/dev/null | head -n1)
+		[ -n "$udc" ] && break
+		sleep 1
+	done
+	[ -n "$udc" ] || { echo "S05usbgadget: no UDC"; return 1; }
+	echo "$udc" > UDC
+}
+
+case "$1" in
+	start) start ;;
+	stop) echo "" > $G/UDC 2>/dev/null ;;
+esac

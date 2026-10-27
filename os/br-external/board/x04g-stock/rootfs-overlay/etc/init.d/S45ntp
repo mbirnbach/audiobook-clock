@@ -1,0 +1,8 @@
+#!/bin/sh
+# Keep the clock right. Restarted by the udhcpc hook on a new lease: ntpd
+# started before Wi-Fi never resolves its peers.
+case "$1" in
+	start) ntpd -S /usr/sbin/x04g-ntp-synced -p 0.de.pool.ntp.org -p 1.de.pool.ntp.org -p 2.de.pool.ntp.org ;;
+	stop) killall ntpd 2>/dev/null ;;
+	restart) killall ntpd 2>/dev/null; sleep 1; "$0" start ;;
+esac

@@ -1,0 +1,40 @@
+#!/bin/sh
+# Speaker routing for the mt-snd-card, taken from the stock /vendor/etc/mixer_paths.xml:
+# the initial settings plus the "speaker" path (codec LINEOUT -> external class-D amp).
+set_ctl() { amixer -q -c 0 cset name="$1" "$2" || echo "audio-init: failed: $1=$2"; }
+
+set_ctl "LINEOUT Ext Amp Switch" "1"
+set_ctl "LINEOUT Mux" "VOICE_AMP"
+set_ctl "HP Ext Amp Switch" "0"
+set_ctl "HPOUT Mux" "OPEN"
+set_ctl "AIF TX Mux" "Digital MIC"
+set_ctl "Left PGA Mux" "OPEN"
+set_ctl "Right PGA Mux" "OPEN"
+set_ctl "INT ADDA O03_O04 Switch" "1"
+set_ctl "I2S O03_O04 Switch" "1"
+set_ctl "MRG BT O02 Switch" "1"
+set_ctl "PCM0 O02 Switch" "0"
+set_ctl "AIN Mux" "INT ADC"
+set_ctl "DAIBT Mux" "MRG"
+set_ctl "O03 I05 Switch" "1"
+set_ctl "O04 I06 Switch" "1"
+set_ctl "O03 I07 Switch" "1"
+set_ctl "O04 I08 Switch" "1"
+set_ctl "O09 I03 Switch" "1"
+set_ctl "O10 I04 Switch" "1"
+set_ctl "O05 I05 Switch" "1"
+set_ctl "O06 I06 Switch" "1"
+set_ctl "O05 I07 Switch" "1"
+set_ctl "O06 I08 Switch" "1"
+set_ctl "O11 I02 Switch" "1"
+set_ctl "O02 I05 Switch" "0"
+set_ctl "O02 I06 Switch" "0"
+
+# path "speaker"
+set_ctl "LINEOUT Mux" "VOICE_AMP"
+set_ctl "LINEOUT Ext Amp Switch" "1"
+
+# Bedside speaker: 14 dB below the stock +4 dB (also less hiss); the app's volume
+# scale covers the 38 dB below that.
+set_ctl "Lineout_PGA_GAIN" "4"
+set_ctl "Voice Amp Playback Volume" "4"

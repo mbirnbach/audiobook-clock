@@ -1,0 +1,6 @@
+#!/bin/sh
+# wpa_cli action script: ask udhcpc for a new lease whenever we (re)connect,
+# e.g. after the app switched networks.
+case "$2" in
+	CONNECTED) kill -USR1 $(cat /var/run/udhcpc.wlan0.pid 2>/dev/null) 2>/dev/null ;;
+esac

@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark">
+<title>Nightstand setup</title>
+<style>
+  @font-face { font-family: "Instrument Sans"; src: url(/font.ttf) format("truetype"); font-weight: 400 700; }
+  :root {
+    --bg: #101014; --card: #1b1b21; --field: #26262d; --line: rgba(255,255,255,.12);
+    --text: #fff; --dim: rgba(255,255,255,.66); --accent: #9fe0b0; --error: #ff9b8a;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--text); }
+  body { font: 16px/1.4 "Instrument Sans", system-ui, sans-serif; padding: 28px 16px 48px; max-width: 480px; margin: 0 auto; }
+  h1 { font-size: 28px; font-weight: 600; letter-spacing: -.01em; margin: 0 0 4px; }
+  h2 { font-size: 19px; font-weight: 600; margin: 0 0 14px; }
+  p { margin: 0; color: var(--dim); }
+  .card { background: var(--card); border-radius: 18px; padding: 20px; margin-top: 18px; }
+  label { display: block; font-size: 14px; color: var(--dim); margin: 14px 0 6px; }
+  input, select { width: 100%; height: 50px; border-radius: 12px; border: 1px solid var(--line); background: var(--field);
+    color: var(--text); font: inherit; font-size: 17px; padding: 0 14px; appearance: none; }
+  input:focus, select:focus { outline: 2px solid #fff; outline-offset: 0; border-color: transparent; }
+  input.code { font-size: 32px; letter-spacing: .3em; text-align: center; font-weight: 600; height: 64px; }
+  button { margin-top: 18px; width: 100%; height: 52px; border: 0; border-radius: 999px; background: #fff; color: #141414;
+    font: inherit; font-size: 17px; font-weight: 600; }
+  button:disabled { opacity: .5; }
+  .msg { margin-top: 12px; font-size: 15px; min-height: 1em; }
+  .msg.err { color: var(--error); }
+  .msg.ok { color: var(--accent); }
+  .row { display: flex; gap: 8px; align-items: center; color: var(--dim); font-size: 15px; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--accent); flex: none; }
+  .hidden { display: none; }
+  .done { text-align: center; padding: 28px 20px; }
+  .done .big { font-size: 22px; font-weight: 600; margin-bottom: 6px; color: var(--text); }
+</style>
+</head>
+<body>
+  <h1>Nightstand</h1>
+  <p id="intro" data-de="Richte deine Uhr hier ein.">Set up your clock from here.</p>
+
+  <section class="card" id="codeCard">
+    <h2 data-de="Kopplungscode">Pairing code</h2>
+    <p data-de="Gib den 6-stelligen Code von der Uhr ein.">Enter the 6-digit code shown on the clock.</p>
+    <input class="code" id="code" inputmode="numeric" autocomplete="one-time-code" maxlength="7" placeholder="000000">
+    <button id="codeBtn" data-de="Weiter">Continue</button>
+    <div class="msg" id="codeMsg"></div>
+  </section>
+
+  <div id="forms" class="hidden">
+    <section class="card" id="absCard">
+      <h2>Audiobookshelf</h2>
+      <div class="row hidden" id="absCurrent"><span class="dot"></span><span></span></div>
+      <label for="server" data-de="Server">Server</label>
+      <select id="serverSelect"></select>
+      <input id="server" class="hidden" style="margin-top:8px" placeholder="http://192.168.1.20:13378"
+             autocapitalize="off" autocorrect="off" spellcheck="false" inputmode="url">
+      <label for="username" data-de="Benutzername">Username</label>
+      <input id="username" autocapitalize="off" autocorrect="off" spellcheck="false" autocomplete="username">
+      <label for="password" data-de="Passwort">Password</label>
+      <input id="password" type="password" autocomplete="current-password">
+      <button id="absBtn" data-de="Auf der Uhr anmelden">Sign in on the clock</button>
+      <div class="msg" id="absMsg"></div>
+    </section>
+
+    <section class="card hidden" id="wifiCard">
+      <h2 data-de="WLAN">Wi-Fi</h2>
+      <div class="row hidden" id="wifiCurrent"><span class="dot"></span><span></span></div>
+      <label for="ssid" data-de="Netzwerk">Network</label>
+      <select id="ssidSelect"></select>
+      <input id="ssid" class="hidden" style="margin-top:8px" placeholder="Network name" autocapitalize="off" autocorrect="off">
+      <label for="wifiPass" data-de="Passwort">Password</label>
+      <input id="wifiPass" type="password" autocomplete="off">
+      <button id="wifiBtn" data-de="Uhr verbinden">Connect the clock</button>
+      <div class="msg" id="wifiMsg"></div>
+    </section>
+  </div>
+
+  <section class="card done hidden" id="doneCard">
+    <div class="big" data-de="Fertig">All set</div>
+    <p id="doneText"></p>
+  </section>
+
+<script>
+const $ = id => document.getElementById(id);
+// German when the phone is set to German; messages from the clock follow the clock's language.
+const DE = navigator.language.toLowerCase().startsWith("de");
+const t = (en, de) => DE ? de : en;
+if (DE) {
+  document.documentElement.lang = "de";
+  document.title = "Nightstand einrichten";
+  document.querySelectorAll("[data-de]").forEach(el => el.textContent = el.dataset.de);
+}
+let code = new URLSearchParams(location.search).get("code") || "";
+let info = null;
+
+function msg(el, text, kind) { el.textContent = text || ""; el.className = "msg" + (kind ? " " + kind : ""); }
+
+async function post(path, body) {
+  const r = await fetch(path, { method: "POST", headers: { "Content-Type": "application/json" },
+                                body: JSON.stringify(Object.assign({ code }, body)) });
+  let data = {};
+  try { data = await r.json(); } catch (e) {}
+  return Object.assign({ ok: r.ok }, data);
+}
+
+function fillSelect(sel, items, custom, current) {
+  const prev = sel.value;
+  sel.innerHTML = "";
+  for (const it of items) sel.add(new Option(it.label, it.value));
+  sel.add(new Option(custom, "__custom"));
+  const want = items.some(i => i.value === prev) ? prev : (items.find(i => i.value === current) || items[0] || {}).value;
+  sel.value = want || "__custom";
+  sel.dispatchEvent(new Event("change"));
+}
+
+async function refresh() {
+  try { info = await (await fetch("/api/info")).json(); } catch (e) { return; }
+  const servers = info.servers.map(s => ({ label: s.host + (s.version ? "  ·  v" + s.version : ""), value: s.url }));
+  if (info.server && !servers.some(s => s.value === info.server))
+    servers.unshift({ label: info.server.replace(/^https?:\/\//, ""), value: info.server });
+  fillSelect($("serverSelect"), servers, t("Other address…", "Andere Adresse …"), info.server);
+  if (info.username && !$("username").value) $("username").value = info.username;
+  const cur = $("absCurrent");
+  cur.classList.toggle("hidden", !info.signedIn);
+  cur.lastElementChild.textContent = info.signedIn ? t("Signed in as ", "Angemeldet als ") + info.username : "";
+
+  $("wifiCard").classList.toggle("hidden", !info.wifi.available);
+  const nets = info.wifi.networks.map(n => ({ label: n.ssid + "  ·  " + n.detail, value: n.ssid }));
+  fillSelect($("ssidSelect"), nets, t("Other network…", "Anderes Netzwerk …"), info.wifi.ssid);
+  const wc = $("wifiCurrent");
+  wc.classList.toggle("hidden", !info.wifi.ssid);
+  wc.lastElementChild.textContent = info.wifi.ssid ? t("Connected to ", "Verbunden mit ") + info.wifi.ssid : "";
+}
+
+$("serverSelect").addEventListener("change", e => $("server").classList.toggle("hidden", e.target.value !== "__custom"));
+$("ssidSelect").addEventListener("change", e => $("ssid").classList.toggle("hidden", e.target.value !== "__custom"));
+
+async function unlock() {
+  const r = await post("/api/check", {});
+  if (!r.ok) {
+    msg($("codeMsg"), t("That code doesn't match the one on the clock.", "Der Code passt nicht zu dem auf der Uhr."), "err");
+    $("codeCard").classList.remove("hidden");
+    return;
+  }
+  $("codeCard").classList.add("hidden");
+  $("forms").classList.remove("hidden");
+  $("intro").textContent = t("Paired with the clock. Fill in what you'd like to set up.", "Mit der Uhr gekoppelt. Fülle aus, was du einrichten möchtest.");
+  refresh();
+  setInterval(refresh, 4000);
+}
+
+$("codeBtn").addEventListener("click", () => { code = $("code").value.replace(/\D/g, ""); unlock(); });
+$("code").addEventListener("keydown", e => { if (e.key === "Enter") $("codeBtn").click(); });
+
+$("absBtn").addEventListener("click", async () => {
+  const sel = $("serverSelect").value;
+  const server = sel === "__custom" ? $("server").value.trim() : sel;
+  const username = $("username").value.trim(), password = $("password").value;
+  if (!server || !username) return msg($("absMsg"), t("Server and username are required.", "Server und Benutzername werden benötigt."), "err");
+  $("absBtn").disabled = true;
+  msg($("absMsg"), t("Signing in on the clock…", "Uhr meldet sich an …"));
+  const r = await post("/api/pair", { server, username, password }).catch(() => ({ ok: false, message: t("Lost connection to the clock.", "Verbindung zur Uhr verloren.") }));
+  $("absBtn").disabled = false;
+  $("password").value = "";
+  if (r.field === "code") { $("forms").classList.add("hidden"); $("codeCard").classList.remove("hidden"); }
+  if (!r.ok) return msg($("absMsg"), r.message || t("Sign in failed.", "Anmeldung fehlgeschlagen."), "err");
+  $("forms").classList.add("hidden");
+  $("doneCard").classList.remove("hidden");
+  $("doneText").textContent = t("The clock is signed in as " + username + ". You can close this page.", "Die Uhr ist als " + username + " angemeldet. Du kannst diese Seite schließen.");
+});
+
+$("wifiBtn").addEventListener("click", async () => {
+  const sel = $("ssidSelect").value;
+  const ssid = sel === "__custom" ? $("ssid").value : sel;
+  if (!ssid) return msg($("wifiMsg"), t("Choose a network.", "Wähle ein Netzwerk."), "err");
+  $("wifiBtn").disabled = true;
+  const r = await post("/api/wifi", { ssid, password: $("wifiPass").value }).catch(() => ({ ok: false, message: t("Lost connection to the clock.", "Verbindung zur Uhr verloren.") }));
+  $("wifiBtn").disabled = false;
+  $("wifiPass").value = "";
+  msg($("wifiMsg"), (r.message || "") + (r.ok ? t(" If this page stops responding, reconnect your phone to " + ssid + " and reopen it.", " Falls diese Seite nicht mehr reagiert, verbinde dein Handy mit " + ssid + " und öffne sie neu.") : ""), r.ok ? "ok" : "err");
+});
+
+if (code) { $("code").value = code; unlock(); }
+</script>
+</body>
+</html>

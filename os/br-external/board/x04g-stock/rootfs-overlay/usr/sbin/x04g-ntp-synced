@@ -1,0 +1,7 @@
+#!/bin/sh
+# Called by busybox ntpd on sync ("stratum") and step ("step") events:
+# keep the PMIC's RTC right, so the clock has the time (and knows whether it's
+# night) right after a reboot, before Wi-Fi is up.
+case "$1" in
+	stratum|step) hwclock -w -u ;;
+esac

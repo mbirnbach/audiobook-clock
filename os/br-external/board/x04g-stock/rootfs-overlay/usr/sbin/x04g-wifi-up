@@ -1,0 +1,46 @@
+#!/bin/sh
+# Bring up the MT8167 CONNSYS Wi-Fi with the stock vendor modules:
+# wmt_drv, then wmt-init (replaces Android's wmt_loader/wmt_launcher and keeps
+# running to serve firmware patch requests), then the Wi-Fi driver, then power on.
+M=/lib/modules/4.14.141+
+LOG=/var/log/wmt-init.log
+
+wait_for() { # <seconds> <test...>
+	n=$(($1 * 5)); shift
+	while [ $n -gt 0 ]; do "$@" && return 0; sleep 0.2; n=$((n - 1)); done
+	return 1
+}
+
+# Calibration and MAC address: wmt_drv reads Android's NVRAM file. Without it
+# the driver makes up a MAC on every boot and lists a fake "NVRAM WARNING"
+# network. Copied once from the factory nvdata partition (never written to).
+NV=/data/nvram/APCFG/APRDEB
+if [ ! -s $NV/WIFI ] && dev=$(x04g-partdev nvdata); then
+	mkdir -p /run/nvdata $NV
+	if mount -t ext4 -o ro,noload "$dev" /run/nvdata; then
+		cp /run/nvdata/APCFG/APRDEB/WIFI /run/nvdata/APCFG/APRDEB/WIFI_CUSTOM $NV/
+		umount /run/nvdata
+	fi
+fi
+
+grep -q '^wmt_drv ' /proc/modules || insmod $M/wmt_drv.ko || exit 1
+mdev -s
+if ! pidof wmt-init >/dev/null; then
+	mkdir -p /var/log
+	wmt-init > $LOG 2>&1 &
+fi
+wait_for 10 grep -q "ready, serving requests" $LOG || { echo "wmt-init not ready"; cat $LOG; exit 1; }
+
+grep -q '^wmt_chrdev_wifi ' /proc/modules || insmod $M/wmt_chrdev_wifi.ko
+grep -q '^wlan_drv_gen2 ' /proc/modules || insmod $M/wlan_drv_gen2.ko
+mdev -s
+wait_for 10 test -e /dev/wmtWifi || { echo "no /dev/wmtWifi"; exit 1; }
+# hand the calibration to the driver before power-on, in a single write
+# (what Android's Wi-Fi HAL does)
+if [ -s $NV/WIFI ]; then
+	(printf WR-BUF:NVRAM; cat $NV/WIFI) > /run/wifi-nvram.buf
+	dd if=/run/wifi-nvram.buf of=/dev/wmtWifi bs=4096 count=1 2>/dev/null
+fi
+echo 1 > /dev/wmtWifi || exit 1
+wait_for 10 test -d /sys/class/net/wlan0 || { echo "no wlan0"; exit 1; }
+ip link set wlan0 up

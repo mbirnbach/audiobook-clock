@@ -1,0 +1,10 @@
+#!/bin/sh
+# Wake the MediaTek display path (Android's SurfaceFlinger normally does this).
+case "$1" in
+	start)
+		# LK leaves its "orange state" text in the other framebuffer pages
+		dd if=/dev/zero of=/dev/fb0 bs=1920 count=2400 2>/dev/null
+		echo 0 > /sys/class/graphics/fb0/blank
+		echo 255 > /sys/class/leds/lcd-backlight/brightness
+		;;
+esac

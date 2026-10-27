@@ -1,0 +1,12 @@
+config BR2_PACKAGE_NIGHTSTAND
+	bool "nightstand"
+	depends on BR2_PACKAGE_QT6
+	select BR2_PACKAGE_QT6BASE_GUI
+	select BR2_PACKAGE_QT6BASE_NETWORK
+	select BR2_PACKAGE_QT6DECLARATIVE
+	select BR2_PACKAGE_QT6DECLARATIVE_QUICK
+	select BR2_PACKAGE_QT6MULTIMEDIA
+	select BR2_PACKAGE_QT6TOOLS
+	select BR2_PACKAGE_HOST_QT6TOOLS_LINGUIST_TOOLS  # translations (i18n/)
+	help
+	  Audiobookshelf player UI for the Mi Smart Clock (app/ in this repo).

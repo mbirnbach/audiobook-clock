@@ -1,0 +1,28 @@
+# /etc/inittab for the stock (MediaTek 4.14) kernel: no devtmpfs, no VT.
+::sysinit:/bin/mount -t proc proc /proc
+::sysinit:/bin/mount -t sysfs sysfs /sys
+::sysinit:/bin/mount -t tmpfs -o mode=0755,size=1M tmpfs /dev
+::sysinit:/bin/mkdir -p /dev/pts /dev/shm /run /tmp
+::sysinit:/bin/mount -t devpts devpts /dev/pts
+# device nodes before any script runs: a "> /dev/null" before mdev would
+# leave a regular file there (and glibc daemon() refuses it)
+::sysinit:/sbin/mdev -s
+::sysinit:/bin/mount -t tmpfs tmpfs /dev/shm
+::sysinit:/bin/mount -t tmpfs tmpfs /run
+::sysinit:/bin/mount -t tmpfs tmpfs /tmp
+::sysinit:/bin/mount -t configfs configfs /sys/kernel/config
+::sysinit:/bin/mount -t debugfs debugfs /sys/kernel/debug
+::sysinit:/bin/hostname -F /etc/hostname
+::sysinit:/etc/init.d/rcS
+
+# Serial console over the USB gadget (CDC-ACM), see S05usbgadget
+ttyGS0::respawn:/sbin/getty -L -n -l /bin/sh ttyGS0 115200 vt100
+
+# The app; init restarts it if it exits
+::respawn:/usr/sbin/nightstand-run
+# ...and this restarts it (or reboots) if it hangs
+::respawn:/usr/sbin/nightstand-watch
+
+::ctrlaltdel:/sbin/reboot
+::shutdown:/etc/init.d/rcK
+::shutdown:/bin/umount -a -r

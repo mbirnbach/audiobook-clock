@@ -1,0 +1,5 @@
+config BR2_PACKAGE_X04G_UTILS
+	bool "x04g-utils"
+	help
+	  Small helpers for the Mi Smart Clock: reboot2 (reboot with an
+	  argument such as "bootloader").

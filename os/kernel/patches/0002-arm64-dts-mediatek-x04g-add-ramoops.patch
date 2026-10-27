@@ -1,0 +1,41 @@
+From e180f49365da6d1562fa8022a0ab6d79d2f1a9b7 Mon Sep 17 00:00:00 2001
+From: abs-clock <abs-clock@localhost>
+Date: Mon, 26 Oct 2026 19:36:37 +0000
+Subject: [PATCH] arm64: dts: mediatek: x04g: add ramoops at the stock pstore
+ location
+
+Matches the stock kernel (0x54410000, 0xe0000, record 4K, console 256K,
+ftrace 4K, pmsg 64K) so logs survive a watchdog reset and can be read
+from /sys/fs/pstore on either kernel.
+---
+ .../arm64/boot/dts/mediatek/mt8167-xiaomi-x04g.dts | 14 ++++++++++++++
+ 1 file changed, 14 insertions(+)
+
+diff --git a/arch/arm64/boot/dts/mediatek/mt8167-xiaomi-x04g.dts b/arch/arm64/boot/dts/mediatek/mt8167-xiaomi-x04g.dts
+index 6230245ee..e7019059a 100644
+--- a/arch/arm64/boot/dts/mediatek/mt8167-xiaomi-x04g.dts
++++ b/arch/arm64/boot/dts/mediatek/mt8167-xiaomi-x04g.dts
+@@ -56,6 +56,20 @@ atf-reserved-memory {
+ 			no-map;
+ 		};
+ 
++		/*
++		 * Same location and layout as the stock kernel ramoops, so a
++		 * console log left by this kernel can be read back from the
++		 * stock (LineageOS) kernel after a watchdog reset.
++		 */
++		ramoops@54410000 {
++			compatible = "ramoops";
++			reg = <0x00 0x54410000 0x00 0xe0000>;
++			record-size = <0x1000>;
++			console-size = <0x40000>;
++			ftrace-size = <0x1000>;
++			pmsg-size = <0x10000>;
++		};
++
+ 		consys_memory: consys-reserve-memory {
+ 			size = <0x00 0x200000>;
+ 			alignment = <0x00 0x200000>;
+-- 
+2.43.0
+

@@ -1,0 +1,83 @@
+#!/bin/sh
+# Boot shim for the stock kernel. LK only passes a correct initrd for small
+# ramdisks (~1 MB, like stock), so this stays minimal: set up /dev and the
+# USB serial console, then switch to the real root filesystem on eMMC.
+#
+# Kernel command line:
+#   abs.root=<partition name>   read-only ext4 root filesystem
+#   abs.shell                   stop here with a shell on the USB serial console
+
+export PATH=/bin:/sbin
+mount -t proc proc /proc
+mount -t sysfs sysfs /sys
+mount -t tmpfs -o mode=0755,size=1M tmpfs /dev
+mkdir -p /dev/pts
+mount -t devpts devpts /dev/pts
+mdev -s
+mount -t configfs configfs /sys/kernel/config
+
+gadget() {
+	G=/sys/kernel/config/usb_gadget/g1
+	[ -d $G ] && return
+	mkdir -p $G/strings/0x409 $G/functions/acm.GS0 $G/configs/c.1/strings/0x409
+	echo 0x1d6b > $G/idVendor
+	echo 0x0104 > $G/idProduct
+	echo abs-clock > $G/strings/0x409/product
+	echo shim > $G/configs/c.1/strings/0x409/configuration
+	ln -s $G/functions/acm.GS0 $G/configs/c.1/
+	for i in 1 2 3 4 5 6 7 8 9 10; do
+		udc=$(ls /sys/class/udc 2>/dev/null | head -n1)
+		[ -n "$udc" ] && break
+		sleep 1
+	done
+	echo "$udc" > $G/UDC
+}
+
+rescue() {
+	echo "shim: $*" > /dev/kmsg
+	gadget
+	mdev -s
+	while true; do
+		[ -e /dev/ttyGS0 ] && setsid sh -c 'exec sh </dev/ttyGS0 >/dev/ttyGS0 2>&1'
+		sleep 1
+		mdev -s
+	done
+}
+
+part_dev() {
+	for u in /sys/class/block/*/uevent; do
+		if grep -q "^PARTNAME=$1\$" "$u"; then
+			echo /dev/$(sed -n 's/^DEVNAME=//p' "$u")
+			return 0
+		fi
+	done
+	return 1
+}
+
+root=
+for arg in $(cat /proc/cmdline); do
+	case "$arg" in
+		abs.root=*) root=${arg#abs.root=} ;;
+		abs.shell) rescue "abs.shell given" ;;
+	esac
+done
+[ -n "$root" ] || rescue "no abs.root= on the kernel command line"
+
+dev=$(part_dev "$root") || rescue "partition $root not found"
+mkdir -p /ro /rw /newroot
+# the stock kernel has no squashfs, so the root is ext4, mounted read-only
+mount -t ext4 -o ro,noatime "$dev" /ro || rescue "cannot mount $dev ($root)"
+[ -x /ro/sbin/init ] || rescue "no /sbin/init on $root"
+
+# writable layer in RAM; persistent data lives on its own partition
+mount -t tmpfs -o mode=0755 tmpfs /rw
+mkdir -p /rw/upper /rw/work
+mount -t overlay overlay -o lowerdir=/ro,upperdir=/rw/upper,workdir=/rw/work /newroot ||
+	rescue "overlay mount failed"
+mkdir -p /newroot/media/ro /newroot/media/rw
+mount --move /ro /newroot/media/ro
+mount --move /rw /newroot/media/rw
+
+umount /dev/pts /sys/kernel/config
+umount /dev /sys /proc
+exec switch_root /newroot /sbin/init

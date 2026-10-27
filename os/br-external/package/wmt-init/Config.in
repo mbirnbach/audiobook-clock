@@ -1,0 +1,5 @@
+config BR2_PACKAGE_WMT_INIT
+	bool "wmt-init"
+	help
+	  Brings up the MediaTek MT8167 CONNSYS Wi-Fi/BT block
+	  (replaces Android's wmt_loader/wmt_launcher).

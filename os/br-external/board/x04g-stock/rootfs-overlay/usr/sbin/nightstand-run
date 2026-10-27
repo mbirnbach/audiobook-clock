@@ -1,0 +1,29 @@
+#!/bin/sh
+# Started (and restarted) by init, see /etc/inittab.
+export HOME=/data/nightstand
+export XDG_CONFIG_HOME=$HOME/.config
+export XDG_CACHE_HOME=$HOME/.cache
+export XDG_RUNTIME_DIR=/run/nightstand
+mkdir -p $XDG_CONFIG_HOME $XDG_CACHE_HOME $XDG_RUNTIME_DIR
+chmod 700 $XDG_RUNTIME_DIR
+
+export LANG=C.UTF-8
+
+# The panel is natively 480x800 portrait and shows the framebuffer turned 90°
+# clockwise; Qt 6 linuxfb can't rotate, so the app turns its 800x480 stage.
+export QT_QPA_PLATFORM="linuxfb:fb=/dev/fb0"
+NIGHTSTAND_ARGS="--rotate 270"
+# touch reports landscape (800x480) coordinates; map them onto the portrait fb
+export QT_QPA_EVDEV_TOUCHSCREEN_PARAMETERS="/dev/input/event2:rotate=270"
+export QT_QPA_EVDEV_KEYBOARD_PARAMETERS="/dev/input/event0:/dev/input/event1"
+export QT_QPA_FB_HIDECURSOR=1
+
+# Local overrides while tuning on the device (rotation, touch transform, ...)
+[ -f $HOME/env ] && . $HOME/env
+
+sleep 2  # keeps a crash loop from spinning
+
+# The app treats the backlight it finds at startup as "normal" and dims from
+# there (night mode = 1/4), so reset it on every (re)start.
+echo 255 > /sys/class/leds/lcd-backlight/brightness
+exec /usr/bin/nightstand $NIGHTSTAND_ARGS >> /data/log/nightstand.log 2>&1
